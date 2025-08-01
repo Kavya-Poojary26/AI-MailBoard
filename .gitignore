@@ -1,0 +1,20 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Databases
+*.db
+*.sqlite
+
+# Instance folder
+instance/
+
+# Environment variables (API keys, passwords, etc.)
+.env
+.env.local
+
+# Logs
+*.log
