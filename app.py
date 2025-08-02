@@ -6,14 +6,14 @@ import google.generativeai as genai
 app = Flask(__name__)
 
 # 🔑 Gemini API Key
-genai.configure(api_key="your_api_key_here ")
+genai.configure(api_key="your_api_key")
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # 🔑 Gmail IMAP
 IMAP_SERVER = "imap.gmail.com"
 IMAP_PORT = 993
-EMAIL_ACCOUNT = "your_email_here"   # 🔹 change to your Gmail
-APP_PASSWORD = "your_gmail_app_password"  # 🔹 paste App Password here
+EMAIL_ACCOUNT = "your_gmail"   # change to your Gmail
+APP_PASSWORD = "your_password"      # paste Gmail App Password here
 
 
 # -------- AI Functions --------
@@ -22,13 +22,22 @@ def classify_email(content):
     response = model.generate_content(prompt)
     return response.text.strip()
 
+
 def summarize_email(content):
     prompt = f"Summarize the main purpose of this email in one short sentence:\n\n{content}"
     response = model.generate_content(prompt)
     return response.text.strip()
 
+
 def generate_reply(content, intent):
     prompt = f"Email: {content}\nIntent: {intent}\nDraft a polite professional reply email."
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
+
+def analyze_sentiment(content):
+    """Return Positive, Negative, or Neutral sentiment"""
+    prompt = f"Analyze sentiment of this email in one word [Positive, Negative, Neutral]:\n\n{content}"
     response = model.generate_content(prompt)
     return response.text.strip()
 
@@ -82,6 +91,7 @@ def index():
         intent = classify_email(email_text)
         purpose = summarize_email(email_text)
         reply = generate_reply(email_text, intent)
+        sentiment = analyze_sentiment(email_text)
 
         # Save to DB
         conn = sqlite3.connect("database.db")
@@ -92,14 +102,15 @@ def index():
                         intent TEXT,
                         reply TEXT,
                         purpose TEXT,
+                        sentiment TEXT,
                         important INTEGER DEFAULT 0
                     )""")
-        c.execute("INSERT INTO emails (email, intent, reply, purpose) VALUES (?, ?, ?, ?)",
-                  (email_text, intent, reply, purpose))
+        c.execute("INSERT INTO emails (email, intent, reply, purpose, sentiment) VALUES (?, ?, ?, ?, ?)",
+                  (email_text, intent, reply, purpose, sentiment))
         conn.commit()
         conn.close()
 
-        return jsonify({"intent": intent, "purpose": purpose, "reply": reply})
+        return jsonify({"intent": intent, "purpose": purpose, "reply": reply, "sentiment": sentiment})
 
     return render_template("index.html")
 
@@ -112,7 +123,7 @@ def dashboard():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
 
-    sql = "SELECT id, email, intent, reply, purpose, important FROM emails WHERE 1=1"
+    sql = "SELECT id, email, intent, reply, purpose, important, sentiment FROM emails WHERE 1=1"
     params = []
 
     if query:
@@ -172,8 +183,10 @@ def upload_csv():
         intent = classify_email(email_text)
         purpose = summarize_email(email_text)
         reply = generate_reply(email_text, intent)
-        c.execute("INSERT INTO emails (email, intent, reply, purpose) VALUES (?, ?, ?, ?)",
-                  (email_text, intent, reply, purpose))
+        sentiment = analyze_sentiment(email_text)
+
+        c.execute("INSERT INTO emails (email, intent, reply, purpose, sentiment) VALUES (?, ?, ?, ?, ?)",
+                  (email_text, intent, reply, purpose, sentiment))
 
     conn.commit()
     conn.close()
@@ -184,12 +197,12 @@ def upload_csv():
 def export_csv():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
-    c.execute("SELECT email, purpose, intent, reply, important FROM emails ORDER BY id DESC")
+    c.execute("SELECT email, purpose, intent, reply, sentiment, important FROM emails ORDER BY id DESC")
     rows = c.fetchall()
     conn.close()
 
     def generate():
-        header = ["Email", "Purpose", "Intent", "Reply", "Important"]
+        header = ["Email", "Purpose", "Intent", "Reply", "Sentiment", "Important"]
         yield ",".join(header) + "\n"
         for row in rows:
             yield ",".join(['"'+str(item).replace('"','""')+'"' for item in row]) + "\n"
@@ -208,10 +221,11 @@ def sync_gmail():
         intent = classify_email(e["body"])
         purpose = summarize_email(e["body"])
         reply = generate_reply(e["body"], intent)
+        sentiment = analyze_sentiment(e["body"])
 
-        c.execute("INSERT INTO emails (email, intent, reply, purpose) VALUES (?, ?, ?, ?)",
+        c.execute("INSERT INTO emails (email, intent, reply, purpose, sentiment) VALUES (?, ?, ?, ?, ?)",
                   (f"From: {e['from']} | Subject: {e['subject']} | {e['body']}",
-                   intent, reply, purpose))
+                   intent, reply, purpose, sentiment))
 
     conn.commit()
     conn.close()
@@ -219,5 +233,5 @@ def sync_gmail():
 
 
 if __name__ == "__main__":
-    print("🚀 Starting Flask Smart Email Reply Agent with Gmail IMAP...")
+    print("🚀 Starting Flask Smart Email Reply Agent with Gmail IMAP + Sentiment Analysis...")
     app.run(debug=True)
